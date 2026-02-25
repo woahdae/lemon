@@ -511,7 +511,8 @@ defmodule LemonCore.Config do
       files: parse_gateway_telegram_files(map["files"] || %{}),
       progress_reactions: parse_boolean(map["progress_reactions"], nil),
       reply_to_user_message: parse_boolean(map["reply_to_user_message"], nil),
-      show_tool_status: parse_boolean(map["show_tool_status"], nil)
+      show_tool_status: parse_boolean(map["show_tool_status"], nil),
+      typing_indicator: parse_boolean(map["typing_indicator"], nil)
     }
     |> reject_nil_values()
   end
