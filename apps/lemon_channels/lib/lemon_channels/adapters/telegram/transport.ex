@@ -123,7 +123,7 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
             bot_id: bot_id,
             bot_username: bot_username,
             files: cfg_get(config, :files, %{}),
-            progress_reactions: cfg_get(config, :progress_reactions, true),
+            progress_reactions: bool_cfg_get(config, :progress_reactions, true),
             last_poll_error: nil,
             last_poll_error_log_ts: nil,
             last_webhook_clear_ts: nil
@@ -5465,6 +5465,21 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
 
   defp cfg_get(cfg, key, default \\ nil) when is_atom(key) do
     cfg[key] || cfg[Atom.to_string(key)] || default
+  end
+
+  # cfg_get uses || which treats false as falsy and falls through to the default.
+  # Use this variant for boolean config options that can legitimately be false.
+  defp bool_cfg_get(cfg, key, default) when is_atom(key) do
+    case Map.fetch(cfg, key) do
+      {:ok, val} when is_boolean(val) -> val
+      _ ->
+        case Map.fetch(cfg, Atom.to_string(key)) do
+          {:ok, val} when is_boolean(val) -> val
+          _ -> default
+        end
+    end
+  rescue
+    _ -> default
   end
 
   defp resolve_api_mod(config) do

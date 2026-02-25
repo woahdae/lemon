@@ -247,9 +247,11 @@ defmodule LemonGateway.ConfigLoader do
       compaction: parse_telegram_compaction(fetch(telegram, :compaction)),
       files: parse_telegram_files(fetch(telegram, :files)),
       # When false, suppress 👀/✅/❌ reactions on user messages.
-      progress_reactions: fetch(telegram, :progress_reactions),
+      progress_reactions: fetch_bool(telegram, :progress_reactions),
       # When false, send answer as a new top-level message instead of a reply to the user's message.
-      reply_to_user_message: fetch(telegram, :reply_to_user_message)
+      reply_to_user_message: fetch_bool(telegram, :reply_to_user_message),
+      # When false, suppress the "Tool calls:" status message during runs.
+      show_tool_status: fetch_bool(telegram, :show_tool_status)
     }
   end
 
@@ -537,6 +539,22 @@ defmodule LemonGateway.ConfigLoader do
   defp fetch(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, to_string(key))
   end
+
+  # Like fetch/2 but safe for boolean false values. fetch/2 uses || which treats
+  # false as falsy and falls through to nil, making `option = false` in TOML
+  # indistinguishable from a missing key.
+  defp fetch_bool(map, key) when is_map(map) do
+    case Map.fetch(map, key) do
+      {:ok, val} when is_boolean(val) -> val
+      _ ->
+        case Map.fetch(map, to_string(key)) do
+          {:ok, val} when is_boolean(val) -> val
+          _ -> nil
+        end
+    end
+  end
+
+  defp fetch_bool(_, _), do: nil
 
   defp fetch(list, key) when is_list(list) do
     Keyword.get(list, key) || Keyword.get(list, to_string(key))
