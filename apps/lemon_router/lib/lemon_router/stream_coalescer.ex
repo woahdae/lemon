@@ -1190,12 +1190,7 @@ defmodule LemonRouter.StreamCoalescer do
   end
 
   defp telegram_reply_to_user_message? do
-    case LemonChannels.GatewayConfig.get(:telegram, %{}) do
-      %{} = cfg -> cfg[:reply_to_user_message] != false && cfg["reply_to_user_message"] != false
-      _ -> true
-    end
-  rescue
-    _ -> true
+    LemonChannels.GatewayConfig.get_telegram(:reply_to_user_message, true)
   end
 
   defp parse_int(value), do: ChannelContext.parse_int(value)

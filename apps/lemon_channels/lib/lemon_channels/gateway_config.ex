@@ -12,6 +12,21 @@ defmodule LemonChannels.GatewayConfig do
     _ -> default
   end
 
+  @doc """
+  Look up a key inside the telegram sub-config, with a default.
+
+  Handles both atom and string keys and correctly returns `false` for
+  boolean options that are explicitly disabled (unlike `||`-based lookups
+  which treat `false` as absent).
+  """
+  @spec get_telegram(atom(), term()) :: term()
+  def get_telegram(key, default \\ nil) when is_atom(key) do
+    telegram = get(:telegram, %{})
+    fetch(telegram, key, default)
+  rescue
+    _ -> default
+  end
+
   defp merged_config do
     base_gateway_config()
     |> deep_merge(runtime_gateway_overrides())

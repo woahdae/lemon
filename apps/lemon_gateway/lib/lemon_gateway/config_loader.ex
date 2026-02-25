@@ -542,6 +542,10 @@ defmodule LemonGateway.ConfigLoader do
     Map.get(map, key) || Map.get(map, to_string(key))
   end
 
+  defp fetch(list, key) when is_list(list) do
+    Keyword.get(list, key) || Keyword.get(list, to_string(key))
+  end
+
   # Like fetch/2 but safe for boolean false values. fetch/2 uses || which treats
   # false as falsy and falls through to nil, making `option = false` in TOML
   # indistinguishable from a missing key.
@@ -557,10 +561,6 @@ defmodule LemonGateway.ConfigLoader do
   end
 
   defp fetch_bool(_, _), do: nil
-
-  defp fetch(list, key) when is_list(list) do
-    Keyword.get(list, key) || Keyword.get(list, to_string(key))
-  end
 
   defp resolve_env_ref(value) when is_binary(value) do
     value = String.trim(value)

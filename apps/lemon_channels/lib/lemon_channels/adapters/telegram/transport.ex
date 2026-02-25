@@ -120,6 +120,8 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
             pending_new: %{},
             # run_id => %{chat_id, thread_id, user_msg_id} for reaction tracking
             reaction_runs: %{},
+            # session_key => timer_ref for repeating typing heartbeat
+            typing_timers: %{},
             bot_id: bot_id,
             bot_username: bot_username,
             files: cfg_get(config, :files, %{}),
@@ -160,8 +162,8 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
     state =
       cond do
         buffer && buffer.debounce_ref == debounce_ref ->
-          submit_buffer(buffer, state)
-          %{state | buffers: buffers}
+          flushed_state = submit_buffer(buffer, state)
+          %{flushed_state | buffers: buffers}
 
         buffer ->
           # Stale timer; keep latest buffer.
@@ -317,9 +319,26 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
           state
       end
 
+    # Cancel any pending typing heartbeat for this session.
+    state = cancel_typing_timer(state, session_key)
+
     {:noreply, state}
   rescue
     _ -> {:noreply, state}
+  end
+
+  # Reschedule the typing heartbeat every 4s until cancelled by run_completed.
+  def handle_info({:typing_tick, session_key, chat_id, thread_id}, state) do
+    state =
+      if Map.has_key?(state.typing_timers, session_key) do
+        send_typing_action(state, chat_id, thread_id)
+        timer_ref = Process.send_after(self(), {:typing_tick, session_key, chat_id, thread_id}, 4_000)
+        %{state | typing_timers: Map.put(state.typing_timers, session_key, timer_ref)}
+      else
+        state
+      end
+
+    {:noreply, state}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -851,10 +870,18 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
         state
       end
 
-    # Send typing action once if configured. Expires naturally after ~5s.
-    if state.typing_indicator and is_integer(chat_id) do
-      send_typing_action(state, chat_id, thread_id)
-    end
+    # Start a repeating typing heartbeat if configured. The "typing" action
+    # expires after ~5s in Telegram, so we re-send every 4s until the run
+    # completes. The timer is cancelled in the run_completed handler.
+    state =
+      if state.typing_indicator and is_integer(chat_id) and is_binary(session_key) do
+        maybe_subscribe_to_session(session_key)
+        send_typing_action(state, chat_id, thread_id)
+        timer_ref = Process.send_after(self(), {:typing_tick, session_key, chat_id, thread_id}, 4_000)
+        %{state | typing_timers: Map.put(state.typing_timers, session_key, timer_ref)}
+      else
+        state
+      end
 
     inbound = %{inbound | meta: meta}
     route_to_router(inbound)
@@ -867,6 +894,15 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
     :ok
   rescue
     _ -> :ok
+  end
+
+  defp cancel_typing_timer(state, session_key) do
+    case Map.pop(state.typing_timers, session_key) do
+      {nil, _} -> state
+      {timer_ref, timers} ->
+        Process.cancel_timer(timer_ref)
+        %{state | typing_timers: timers}
+    end
   end
 
   defp send_progress(state, chat_id, _thread_id, reply_to_message_id) do

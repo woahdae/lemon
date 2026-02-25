@@ -687,22 +687,12 @@ defmodule LemonRouter.ToolStatusCoalescer do
   end
 
   defp telegram_reply_to_user_message? do
-    case LemonChannels.GatewayConfig.get(:telegram, %{}) do
-      %{} = cfg -> cfg[:reply_to_user_message] != false && cfg["reply_to_user_message"] != false
-      _ -> true
-    end
-  rescue
-    _ -> true
+    LemonChannels.GatewayConfig.get_telegram(:reply_to_user_message, true)
   end
 
   # Returns false only when channel is "telegram" AND show_tool_status is explicitly false.
   defp telegram_show_tool_status?("telegram") do
-    case LemonChannels.GatewayConfig.get(:telegram, %{}) do
-      %{} = cfg -> cfg[:show_tool_status] != false && cfg["show_tool_status"] != false
-      _ -> true
-    end
-  rescue
-    _ -> true
+    LemonChannels.GatewayConfig.get_telegram(:show_tool_status, true)
   end
 
   defp telegram_show_tool_status?(_channel_id), do: true
