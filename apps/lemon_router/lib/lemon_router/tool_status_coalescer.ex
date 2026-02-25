@@ -56,22 +56,24 @@ defmodule LemonRouter.ToolStatusCoalescer do
   - `:meta` - may include `:status_msg_id` for edit mode
   """
   def ingest_action(session_key, channel_id, run_id, action_event, opts \\ []) do
-    meta = Keyword.get(opts, :meta, %{})
+    if telegram_show_tool_status?(channel_id) do
+      meta = Keyword.get(opts, :meta, %{})
 
-    # Only start the coalescer for relevant events; avoids emitting tool-status
-    # surfaces when the only actions are filtered (e.g. high-volume notes).
-    case normalize_action_event(action_event) do
-      {:skip, _reason} ->
-        :ok
+      # Only start the coalescer for relevant events; avoids emitting tool-status
+      # surfaces when the only actions are filtered (e.g. high-volume notes).
+      case normalize_action_event(action_event) do
+        {:skip, _reason} ->
+          :ok
 
-      {:ok, _id, _action_data} ->
-        case get_or_start_coalescer(session_key, channel_id, meta) do
-          {:ok, pid} ->
-            GenServer.cast(pid, {:action, run_id, action_event, meta})
+        {:ok, _id, _action_data} ->
+          case get_or_start_coalescer(session_key, channel_id, meta) do
+            {:ok, pid} ->
+              GenServer.cast(pid, {:action, run_id, action_event, meta})
 
-          {:error, reason} ->
-            Logger.warning("Failed to start tool status coalescer: #{inspect(reason)}")
-        end
+            {:error, reason} ->
+              Logger.warning("Failed to start tool status coalescer: #{inspect(reason)}")
+          end
+      end
     end
 
     :ok
@@ -692,6 +694,18 @@ defmodule LemonRouter.ToolStatusCoalescer do
   rescue
     _ -> true
   end
+
+  # Returns false only when channel is "telegram" AND show_tool_status is explicitly false.
+  defp telegram_show_tool_status?("telegram") do
+    case LemonChannels.GatewayConfig.get(:telegram, %{}) do
+      %{} = cfg -> cfg[:show_tool_status] != false && cfg["show_tool_status"] != false
+      _ -> true
+    end
+  rescue
+    _ -> true
+  end
+
+  defp telegram_show_tool_status?(_channel_id), do: true
 
   defp extract_message_id_from_delivery({:ok, result}),
     do: extract_message_id_from_delivery(result)
