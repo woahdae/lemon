@@ -245,7 +245,11 @@ defmodule LemonGateway.ConfigLoader do
       voice_transcription_api_key: fetch(telegram, :voice_transcription_api_key),
       voice_max_bytes: fetch(telegram, :voice_max_bytes),
       compaction: parse_telegram_compaction(fetch(telegram, :compaction)),
-      files: parse_telegram_files(fetch(telegram, :files))
+      files: parse_telegram_files(fetch(telegram, :files)),
+      # When false, suppress 👀/✅/❌ reactions on user messages.
+      progress_reactions: fetch(telegram, :progress_reactions),
+      # When false, send answer as a new top-level message instead of a reply to the user's message.
+      reply_to_user_message: fetch(telegram, :reply_to_user_message)
     }
   end
 
