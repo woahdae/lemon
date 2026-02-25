@@ -619,7 +619,7 @@ defmodule LemonRouter.StreamCoalescer do
     chat_id = parse_int(parsed.peer_id)
     thread_id = parse_int(parsed.thread_id)
 
-    reply_to = meta_get(state, :user_msg_id)
+    reply_to = if telegram_reply_to_user_message?(), do: meta_get(state, :user_msg_id), else: nil
     answer_msg_id = meta_get(state, :answer_msg_id)
 
     text = truncate_for_channel("telegram", state.full_text)
@@ -748,7 +748,7 @@ defmodule LemonRouter.StreamCoalescer do
         text =
           if telegram_show_resume_line?(), do: maybe_append_resume_line(text, resume), else: text
 
-        reply_to = meta_get(state, :user_msg_id)
+        reply_to = if telegram_reply_to_user_message?(), do: meta_get(state, :user_msg_id), else: nil
 
         answer_msg_id = meta_get(state, :answer_msg_id)
 
@@ -1187,6 +1187,15 @@ defmodule LemonRouter.StreamCoalescer do
     end
   rescue
     _ -> false
+  end
+
+  defp telegram_reply_to_user_message? do
+    case LemonChannels.GatewayConfig.get(:telegram, %{}) do
+      %{} = cfg -> cfg[:reply_to_user_message] != false && cfg["reply_to_user_message"] != false
+      _ -> true
+    end
+  rescue
+    _ -> true
   end
 
   defp parse_int(value), do: ChannelContext.parse_int(value)

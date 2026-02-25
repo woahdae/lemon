@@ -678,8 +678,19 @@ defmodule LemonRouter.ToolStatusCoalescer do
   defp cancel_timer(timer), do: Process.cancel_timer(timer)
 
   defp maybe_reply_to(state) do
-    meta = state.meta || %{}
-    meta[:user_msg_id] || meta["user_msg_id"]
+    if telegram_reply_to_user_message?() do
+      meta = state.meta || %{}
+      meta[:user_msg_id] || meta["user_msg_id"]
+    end
+  end
+
+  defp telegram_reply_to_user_message? do
+    case LemonChannels.GatewayConfig.get(:telegram, %{}) do
+      %{} = cfg -> cfg[:reply_to_user_message] != false && cfg["reply_to_user_message"] != false
+      _ -> true
+    end
+  rescue
+    _ -> true
   end
 
   defp extract_message_id_from_delivery({:ok, result}),

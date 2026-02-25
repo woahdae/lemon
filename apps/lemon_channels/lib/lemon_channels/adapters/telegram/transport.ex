@@ -123,6 +123,7 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
             bot_id: bot_id,
             bot_username: bot_username,
             files: cfg_get(config, :files, %{}),
+            progress_reactions: cfg_get(config, :progress_reactions, true),
             last_poll_error: nil,
             last_poll_error_log_ts: nil,
             last_webhook_clear_ts: nil
@@ -770,7 +771,7 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
     {chat_id, thread_id, user_msg_id} = extract_message_ids(inbound)
 
     progress_msg_id =
-      if is_integer(chat_id) and is_integer(user_msg_id) do
+      if is_integer(chat_id) and is_integer(user_msg_id) and state.progress_reactions do
         send_progress(state, chat_id, thread_id, user_msg_id)
       else
         nil
