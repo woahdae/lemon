@@ -251,7 +251,9 @@ defmodule LemonGateway.ConfigLoader do
       # When false, send answer as a new top-level message instead of a reply to the user's message.
       reply_to_user_message: fetch_bool(telegram, :reply_to_user_message),
       # When false, suppress the "Tool calls:" status message during runs.
-      show_tool_status: fetch_bool(telegram, :show_tool_status)
+      show_tool_status: fetch_bool(telegram, :show_tool_status),
+      # When true, send a "typing" chat action while processing to indicate activity.
+      typing_indicator: fetch_bool(telegram, :typing_indicator)
     }
   end
 

@@ -182,6 +182,22 @@ defmodule LemonChannels.Telegram.API do
     request(token, "setMessageReaction", params, @default_timeout)
   end
 
+  @doc """
+  Send a chat action (e.g. "typing") to show activity to the user.
+
+  Common actions: "typing", "upload_document", "upload_photo".
+  The action is visible for ~5 seconds or until the bot sends a message.
+  """
+  def send_chat_action(token, chat_id, action, opts \\ %{}) do
+    opts = if is_map(opts), do: opts, else: Enum.into(opts, %{})
+
+    params =
+      %{"chat_id" => chat_id, "action" => action}
+      |> maybe_put("message_thread_id", opts[:message_thread_id] || opts["message_thread_id"])
+
+    request(token, "sendChatAction", params, @default_timeout)
+  end
+
   def get_file(token, file_id) when is_binary(file_id) do
     params = %{"file_id" => file_id}
     request(token, "getFile", params, @default_timeout)

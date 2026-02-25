@@ -124,6 +124,7 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
             bot_username: bot_username,
             files: cfg_get(config, :files, %{}),
             progress_reactions: bool_cfg_get(config, :progress_reactions, true),
+            typing_indicator: bool_cfg_get(config, :typing_indicator, false),
             last_poll_error: nil,
             last_poll_error_log_ts: nil,
             last_webhook_clear_ts: nil
@@ -850,9 +851,22 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
         state
       end
 
+    # Send typing action once if configured. Expires naturally after ~5s.
+    if state.typing_indicator and is_integer(chat_id) do
+      send_typing_action(state, chat_id, thread_id)
+    end
+
     inbound = %{inbound | meta: meta}
     route_to_router(inbound)
     state
+  end
+
+  defp send_typing_action(state, chat_id, thread_id) do
+    opts = if is_integer(thread_id), do: %{message_thread_id: thread_id}, else: %{}
+    _ = state.api_mod.send_chat_action(state.token, chat_id, "typing", opts)
+    :ok
+  rescue
+    _ -> :ok
   end
 
   defp send_progress(state, chat_id, _thread_id, reply_to_message_id) do
