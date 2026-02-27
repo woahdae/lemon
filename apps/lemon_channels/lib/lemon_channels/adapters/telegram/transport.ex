@@ -137,6 +137,8 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
             # {chat_id, thread_id, sender_id} => model picker state
             model_pickers: %{},
             progress_reactions: bool_cfg_get(config, :progress_reactions, true),
+            typing_indicator: bool_cfg_get(config, :typing_indicator, false),
+            typing_timers: %{},
             last_poll_error: nil,
             last_poll_error_log_ts: nil,
             last_webhook_clear_ts: nil
@@ -327,6 +329,35 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
 
         _ ->
           state
+      end
+
+    # Cancel typing heartbeat regardless of whether reactions were tracked.
+    state = if is_binary(session_key), do: cancel_typing_timer(state, session_key), else: state
+
+    {:noreply, state}
+  rescue
+    _ -> {:noreply, state}
+  end
+
+  # Repeating typing heartbeat — fires every 4 s while a run is in progress.
+  # Telegram "typing" chat actions expire after ~5 s, so we re-send before expiry.
+  def handle_info({:typing_tick, session_key, chat_id, thread_id}, state) do
+    state =
+      case Map.get(state.typing_timers, session_key) do
+        nil ->
+          state
+
+        _ref ->
+          send_typing_action(state, chat_id, thread_id)
+
+          timer_ref =
+            Process.send_after(
+              self(),
+              {:typing_tick, session_key, chat_id, thread_id},
+              4_000
+            )
+
+          %{state | typing_timers: Map.put(state.typing_timers, session_key, timer_ref)}
       end
 
     {:noreply, state}
@@ -681,9 +712,52 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
         state
       end
 
+    # Start typing heartbeat if enabled. Cancel any orphaned heartbeat from a prior
+    # in-flight run on this session before starting the new one.
+    state =
+      if state.typing_indicator and is_integer(chat_id) and is_binary(session_key) do
+        state = cancel_typing_timer(state, session_key)
+        maybe_subscribe_to_session(session_key)
+        send_typing_action(state, chat_id, thread_id)
+
+        timer_ref =
+          Process.send_after(
+            self(),
+            {:typing_tick, session_key, chat_id, thread_id},
+            4_000
+          )
+
+        %{state | typing_timers: Map.put(state.typing_timers, session_key, timer_ref)}
+      else
+        state
+      end
+
     inbound = %{inbound | meta: meta}
     route_to_router(inbound)
     state
+  end
+
+  defp send_typing_action(state, chat_id, thread_id) do
+    _ =
+      start_async_task(state, fn ->
+        state.api_mod.send_chat_action(
+          state.token,
+          chat_id,
+          "typing",
+          if(is_integer(thread_id), do: %{message_thread_id: thread_id}, else: %{})
+        )
+      end)
+
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp cancel_typing_timer(state, session_key) do
+    case Map.pop(state.typing_timers, session_key) do
+      {nil, _} -> state
+      {ref, timers} -> Process.cancel_timer(ref); %{state | typing_timers: timers}
+    end
   end
 
   defp send_progress(state, chat_id, _thread_id, reply_to_message_id) do

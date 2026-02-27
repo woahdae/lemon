@@ -182,6 +182,22 @@ defmodule LemonChannels.Telegram.API do
     request(token, "setMessageReaction", params, @default_timeout)
   end
 
+  @doc """
+  Send a chat action (e.g. "typing") to show status in the chat header.
+
+  `action` is a string such as `"typing"`, `"upload_document"`, etc.
+  The action expires after ~5 s; repeat before expiry for a continuous indicator.
+  """
+  def send_chat_action(token, chat_id, action, opts \\ %{}) do
+    opts = if is_map(opts), do: opts, else: Enum.into(opts, %{})
+
+    params =
+      %{"chat_id" => chat_id, "action" => action}
+      |> maybe_put("message_thread_id", opts[:message_thread_id] || opts["message_thread_id"])
+
+    request(token, "sendChatAction", params, @default_timeout)
+  end
+
   def get_file(token, file_id) when is_binary(file_id) do
     params = %{"file_id" => file_id}
     request(token, "getFile", params, @default_timeout)

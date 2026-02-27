@@ -183,7 +183,8 @@ defmodule LemonGateway.ConfigLoader do
       files: parse_telegram_files(fetch(telegram, :files)),
       progress_reactions: fetch_bool(telegram, :progress_reactions),
       reply_to_user_message: fetch_bool(telegram, :reply_to_user_message),
-      show_tool_status: fetch_bool(telegram, :show_tool_status)
+      show_tool_status: fetch_bool(telegram, :show_tool_status),
+      typing_indicator: fetch_bool(telegram, :typing_indicator)
     }
     |> reject_nil_values()
   end

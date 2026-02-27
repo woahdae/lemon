@@ -135,6 +135,78 @@ defmodule LemonChannels.Adapters.Telegram.TransportConfigFlagsTest do
     refute_receive {:set_message_reaction, _, _, _}, 200
   end
 
+  test "typing_indicator: true — sendChatAction(typing) sent on inbound message" do
+    chat_id = 440_003
+    user_msg_id = 2003
+
+    FlagsMockAPI.set_updates([message_update(chat_id, user_msg_id, "hello")])
+
+    assert {:ok, _pid} =
+             start_transport(%{
+               allowed_chat_ids: [chat_id],
+               deny_unbound_chats: false,
+               typing_indicator: true,
+               progress_reactions: false
+             })
+
+    assert_receive {:send_chat_action, ^chat_id, "typing"}, 500
+  end
+
+  test "typing_indicator: false — no sendChatAction sent on inbound message" do
+    chat_id = 440_004
+    user_msg_id = 2004
+
+    FlagsMockAPI.set_updates([message_update(chat_id, user_msg_id, "hello")])
+
+    assert {:ok, _pid} =
+             start_transport(%{
+               allowed_chat_ids: [chat_id],
+               deny_unbound_chats: false,
+               typing_indicator: false,
+               progress_reactions: false
+             })
+
+    assert_receive {:inbound, _}, 500
+    refute_receive {:send_chat_action, _, _}, 200
+  end
+
+  test "typing_indicator heartbeat — typing_timers populated after inbound, cleared after run_completed" do
+    chat_id = 440_005
+    user_msg_id = 2005
+
+    FlagsMockAPI.set_updates([message_update(chat_id, user_msg_id, "hello")])
+
+    assert {:ok, pid} =
+             start_transport(%{
+               allowed_chat_ids: [chat_id],
+               deny_unbound_chats: false,
+               typing_indicator: true,
+               progress_reactions: false
+             })
+
+    assert_receive {:send_chat_action, ^chat_id, "typing"}, 500
+
+    state = :sys.get_state(pid)
+    assert map_size(state.typing_timers) == 1
+
+    session_key = hd(Map.keys(state.typing_timers))
+
+    send(
+      pid,
+      %LemonCore.Event{
+        type: :run_completed,
+        ts_ms: System.monotonic_time(:millisecond),
+        meta: %{session_key: session_key},
+        payload: %{ok: true}
+      }
+    )
+
+    :sys.get_state(pid)
+
+    state = :sys.get_state(pid)
+    assert map_size(state.typing_timers) == 0
+  end
+
   # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
