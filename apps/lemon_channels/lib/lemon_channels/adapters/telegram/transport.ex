@@ -870,6 +870,11 @@ defmodule LemonChannels.Adapters.Telegram.Transport do
         state
       end
 
+    # Cancel any orphaned heartbeat for this session before starting a new one.
+    # A new inbound message means the previous run is done regardless of whether
+    # run_completed fired (e.g. after an abnormal session reset).
+    state = cancel_typing_timer(state, session_key)
+
     # Start a repeating typing heartbeat if configured. The "typing" action
     # expires after ~5s in Telegram, so we re-send every 4s until the run
     # completes. The timer is cancelled in the run_completed handler.
