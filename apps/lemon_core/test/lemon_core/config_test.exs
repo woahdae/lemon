@@ -561,4 +561,75 @@ defmodule LemonCore.ConfigTest do
     assert config.gateway.discord.allowed_guild_ids == [1475727416549969980]
     assert config.gateway.discord.deny_unbound_channels == false
   end
+
+  test "parses workspace_write in tool_policy", %{home: home} do
+    global_dir = Path.join(home, ".lemon")
+    File.mkdir_p!(global_dir)
+
+    File.write!(Path.join(global_dir, "config.toml"), """
+    [agents.default.tool_policy]
+    allow = "all"
+    deny = []
+    require_approval = ["write", "edit"]
+    workspace_write = true
+    """)
+
+    config = Config.load()
+
+    assert config.agents["default"].tool_policy.workspace_write == true
+    assert config.agents["default"].tool_policy.require_approval == ["write", "edit"]
+  end
+
+  test "workspace_write defaults to false when absent", %{home: home} do
+    global_dir = Path.join(home, ".lemon")
+    File.mkdir_p!(global_dir)
+
+    File.write!(Path.join(global_dir, "config.toml"), """
+    [agents.default.tool_policy]
+    allow = "all"
+    deny = []
+    require_approval = ["write"]
+    """)
+
+    config = Config.load()
+
+    assert config.agents["default"].tool_policy.workspace_write == false
+  end
+
+  test "parses per-tool allowed_paths from sub-tables", %{home: home} do
+    global_dir = Path.join(home, ".lemon")
+    File.mkdir_p!(global_dir)
+
+    File.write!(Path.join(global_dir, "config.toml"), """
+    [agents.default.tool_policy]
+    allow = "all"
+    deny = []
+    require_approval = ["edit"]
+
+    [agents.default.tool_policy.edit]
+    allowed_paths = ["~/.lemon/agent/workspace/", "~/Src/in_play/"]
+    """)
+
+    config = Config.load()
+
+    policy = config.agents["default"].tool_policy
+    assert Map.has_key?(policy.per_tool_paths, "edit")
+    assert "~/.lemon/agent/workspace/" in policy.per_tool_paths["edit"]
+    assert "~/Src/in_play/" in policy.per_tool_paths["edit"]
+  end
+
+  test "per_tool_paths is empty map when no sub-tables present", %{home: home} do
+    global_dir = Path.join(home, ".lemon")
+    File.mkdir_p!(global_dir)
+
+    File.write!(Path.join(global_dir, "config.toml"), """
+    [agents.default.tool_policy]
+    allow = "all"
+    require_approval = ["write"]
+    """)
+
+    config = Config.load()
+
+    assert config.agents["default"].tool_policy.per_tool_paths == %{}
+  end
 end

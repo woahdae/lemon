@@ -186,6 +186,162 @@ defmodule CodingAgent.ToolExecutorTest do
     end
   end
 
+  describe "path bypass in execute_with_approval/4" do
+    test "skips approval when workspace_write is true and path is in workspace dir" do
+      home = System.get_env("HOME")
+      workspace_path = Path.join([home, ".lemon", "agent", "workspace", "notes.md"])
+
+      policy = %{
+        allow: :all,
+        deny: [],
+        require_approval: ["write"],
+        approvals: %{},
+        no_reply: false,
+        workspace_write: true,
+        per_tool_paths: %{}
+      }
+
+      context = %{
+        run_id: "test-bypass",
+        session_key: "agent:test:main",
+        timeout_ms: 10,
+        tool_policy: policy,
+        # Approval function that always denies — bypass must prevent it from being called.
+        approval_request_fun: fn _ -> {:ok, :denied} end
+      }
+
+      result =
+        ToolExecutor.execute_with_approval(
+          "write",
+          %{"path" => workspace_path},
+          fn -> %AgentToolResult{content: [%TextContent{type: :text, text: "written"}]} end,
+          context
+        )
+
+      assert %AgentToolResult{content: [%TextContent{text: "written"}]} = result
+    end
+
+    test "does not skip approval when workspace_write is true but path is outside workspace" do
+      home = System.get_env("HOME")
+      outside_path = Path.join([home, "Src", "project", "file.ex"])
+
+      policy = %{
+        allow: :all,
+        deny: [],
+        require_approval: ["write"],
+        approvals: %{},
+        no_reply: false,
+        workspace_write: true,
+        per_tool_paths: %{}
+      }
+
+      context = %{
+        run_id: "test-no-bypass",
+        session_key: "agent:test:main",
+        timeout_ms: 10,
+        tool_policy: policy,
+        approval_request_fun: fn _ -> {:ok, :denied} end
+      }
+
+      result =
+        ToolExecutor.execute_with_approval(
+          "write",
+          %{"path" => outside_path},
+          fn -> %AgentToolResult{content: [%TextContent{type: :text, text: "written"}]} end,
+          context
+        )
+
+      # Approval was denied (not bypassed), so result is the denial message
+      assert %AgentToolResult{details: %{reason: :approval_denied}} = result
+    end
+
+    test "skips approval when path matches per_tool_paths for the tool" do
+      home = System.get_env("HOME")
+      allowed_path = Path.join([home, "Src", "in_play", "app", "models", "user.rb"])
+
+      policy = %{
+        allow: :all,
+        deny: [],
+        require_approval: ["edit"],
+        approvals: %{},
+        no_reply: false,
+        workspace_write: false,
+        per_tool_paths: %{"edit" => [Path.join([home, "Src", "in_play"])]}
+      }
+
+      context = %{
+        run_id: "test-per-tool",
+        session_key: "agent:test:main",
+        timeout_ms: 10,
+        tool_policy: policy,
+        approval_request_fun: fn _ -> {:ok, :denied} end
+      }
+
+      result =
+        ToolExecutor.execute_with_approval(
+          "edit",
+          %{"path" => allowed_path},
+          fn -> %AgentToolResult{content: [%TextContent{type: :text, text: "edited"}]} end,
+          context
+        )
+
+      assert %AgentToolResult{content: [%TextContent{text: "edited"}]} = result
+    end
+
+    test "does not bypass for a different tool not in per_tool_paths" do
+      home = System.get_env("HOME")
+      allowed_path = Path.join([home, "Src", "in_play", "app", "models", "user.rb"])
+
+      policy = %{
+        allow: :all,
+        deny: [],
+        require_approval: ["write"],
+        approvals: %{},
+        no_reply: false,
+        workspace_write: false,
+        per_tool_paths: %{"edit" => [Path.join([home, "Src", "in_play"])]}
+      }
+
+      context = %{
+        run_id: "test-no-per-tool",
+        session_key: "agent:test:main",
+        timeout_ms: 10,
+        tool_policy: policy,
+        approval_request_fun: fn _ -> {:ok, :denied} end
+      }
+
+      result =
+        ToolExecutor.execute_with_approval(
+          "write",
+          %{"path" => allowed_path},
+          fn -> %AgentToolResult{content: [%TextContent{type: :text, text: "written"}]} end,
+          context
+        )
+
+      assert %AgentToolResult{details: %{reason: :approval_denied}} = result
+    end
+
+    test "no bypass when tool_policy is nil in context" do
+      context = %{
+        run_id: "test-nil-policy",
+        session_key: "agent:test:main",
+        timeout_ms: 10,
+        tool_policy: nil,
+        approval_request_fun: fn _ -> {:ok, :denied} end
+      }
+
+      result =
+        ToolExecutor.execute_with_approval(
+          "write",
+          %{"path" => "/some/path/file.txt"},
+          fn -> %AgentToolResult{content: [%TextContent{type: :text, text: "written"}]} end,
+          context
+        )
+
+      assert %AgentToolResult{details: %{reason: :approval_denied}} = result
+    end
+  end
+
   describe "policy integration" do
     test "subagent_restricted policy requires approval for write and edit" do
       policy = ToolPolicy.from_profile(:subagent_restricted)

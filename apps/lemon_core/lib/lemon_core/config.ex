@@ -714,13 +714,28 @@ defmodule LemonCore.Config do
         _ -> nil
       end
 
+    # Per-tool sub-tables arrive as nested maps: map["edit"] => %{"allowed_paths" => [...]}
+    # We collect any key that is a map with an "allowed_paths" entry as a per-tool path config.
+    per_tool_paths =
+      map
+      |> Enum.reduce(%{}, fn {key, value}, acc ->
+        if is_map(value) do
+          paths = parse_string_list(value["allowed_paths"])
+          if paths != [], do: Map.put(acc, key, paths), else: acc
+        else
+          acc
+        end
+      end)
+
     %{
       allow: allow,
       deny: deny,
       require_approval: require_approval,
       approvals: approvals,
       no_reply: parse_boolean(map["no_reply"], false),
-      profile: profile
+      profile: profile,
+      workspace_write: parse_boolean(map["workspace_write"], false),
+      per_tool_paths: per_tool_paths
     }
   end
 
