@@ -515,3 +515,7 @@ reply_to_user_message = true
 # Show a "Tool calls:" status message during runs with tool activity.
 show_tool_status = true
 ```
+
+## Telegram Typing Indicator
+
+Lemon sends a "typing…" chat action while a run is in progress, refreshing every 4 seconds (Telegram actions expire after ~5 seconds). The indicator is cancelled automatically when the run completes.
