@@ -40,7 +40,8 @@ defmodule CodingAgent.ToolExecutor do
   @spec wrap_with_approval(AgentTool.t(), ToolPolicy.policy(), map()) :: AgentTool.t()
   def wrap_with_approval(%AgentTool{} = tool, policy, context) do
     if ToolPolicy.requires_approval?(policy, tool.name) do
-      wrap_tool(tool, context)
+      # Embed the policy in context so path-bypass checks can run at execution time.
+      wrap_tool(tool, Map.put(context, :tool_policy, policy))
     else
       tool
     end
@@ -62,6 +63,13 @@ defmodule CodingAgent.ToolExecutor do
   This function checks if approval is required and blocks until
   approval is granted, denied, or times out.
 
+  Path-based bypasses are evaluated here, at execution time, when the
+  actual args (and thus the target path) are known:
+  - If `context[:tool_policy]` has `workspace_write: true` and the path
+    argument falls within the workspace directory, approval is skipped.
+  - If `context[:tool_policy]` has `per_tool_paths` entries for this tool
+    and the path argument matches one of them, approval is skipped.
+
   Returns:
   - The tool result on success
   - An error result if approval is denied or times out
@@ -77,38 +85,109 @@ defmodule CodingAgent.ToolExecutor do
     session_key = context[:session_key]
     timeout_ms = context[:timeout_ms] || @default_timeout_ms
     approval_request_fun = context[:approval_request_fun] || (&LemonCore.ExecApprovals.request/1)
+    tool_policy = context[:tool_policy]
 
-    case request_approval(
-           run_id,
-           session_key,
-           tool_name,
-           args,
-           timeout_ms,
-           approval_request_fun
-         ) do
-      {:ok, :approved, scope} ->
-        Logger.debug("Tool #{tool_name} approved at scope: #{scope}")
-        execute_fn.()
+    if path_bypass?(tool_name, args, tool_policy) do
+      Logger.debug("Tool #{tool_name} approved via path policy bypass")
+      execute_fn.()
+    else
+      case request_approval(
+             run_id,
+             session_key,
+             tool_name,
+             args,
+             timeout_ms,
+             approval_request_fun
+           ) do
+        {:ok, :approved, scope} ->
+          Logger.debug("Tool #{tool_name} approved at scope: #{scope}")
+          execute_fn.()
 
-      {:ok, :denied} ->
-        Logger.info("Tool #{tool_name} denied by approval")
-        denied_result(tool_name)
+        {:ok, :denied} ->
+          Logger.info("Tool #{tool_name} denied by approval")
+          denied_result(tool_name)
 
-      {:error, :timeout} ->
-        Logger.warning("Tool #{tool_name} approval timed out")
-        timeout_result(tool_name, timeout_ms)
+        {:error, :timeout} ->
+          Logger.warning("Tool #{tool_name} approval timed out")
+          timeout_result(tool_name, timeout_ms)
 
-      {:error, reason} ->
-        Logger.warning("Tool #{tool_name} approval failed: #{inspect(reason)}")
-        approval_error_result(tool_name, reason)
+        {:error, reason} ->
+          Logger.warning("Tool #{tool_name} approval failed: #{inspect(reason)}")
+          approval_error_result(tool_name, reason)
 
-      other ->
-        Logger.warning("Tool #{tool_name} approval returned unexpected value: #{inspect(other)}")
-        approval_error_result(tool_name, {:unexpected_result, other})
+        other ->
+          Logger.warning("Tool #{tool_name} approval returned unexpected value: #{inspect(other)}")
+          approval_error_result(tool_name, {:unexpected_result, other})
+      end
     end
   end
 
   # Private helpers
+
+  # Returns true if the tool's path argument satisfies a workspace_write or
+  # per_tool_paths bypass, meaning approval can be skipped entirely.
+  defp path_bypass?(_tool_name, _args, nil), do: false
+
+  defp path_bypass?(tool_name, args, tool_policy) do
+    path = extract_path(args)
+
+    workspace_bypass?(path, tool_policy) or
+      per_tool_paths_bypass?(tool_name, path, tool_policy)
+  end
+
+  # Extracts a file path from the tool args map. Claude tool conventions use
+  # "path", "file_path", or "command" (for bash). We only check the first two
+  # since bash command strings are not file paths.
+  defp extract_path(args) when is_map(args) do
+    Map.get(args, "path") || Map.get(args, :path) ||
+      Map.get(args, "file_path") || Map.get(args, :file_path)
+  end
+
+  defp extract_path(_), do: nil
+
+  defp workspace_bypass?(nil, _tool_policy), do: false
+
+  defp workspace_bypass?(path, tool_policy) do
+    case Map.get(tool_policy, :workspace_write) do
+      true ->
+        workspace_dir = resolve_workspace_dir()
+        path_within?(path, workspace_dir)
+
+      _ ->
+        false
+    end
+  end
+
+  defp per_tool_paths_bypass?(_tool_name, nil, _tool_policy), do: false
+
+  defp per_tool_paths_bypass?(tool_name, path, tool_policy) do
+    per_tool_paths = Map.get(tool_policy, :per_tool_paths, %{})
+    allowed = Map.get(per_tool_paths, tool_name, [])
+
+    Enum.any?(allowed, fn pattern -> path_within?(path, pattern) end)
+  end
+
+  defp path_within?(path, prefix) when is_binary(path) and is_binary(prefix) do
+    expanded_path = Path.expand(path)
+    expanded_prefix = Path.expand(prefix)
+    # Ensure prefix ends with separator so "/foo/bar" doesn't match "/foo/baz"
+    normalized_prefix =
+      if String.ends_with?(expanded_prefix, "/"),
+        do: expanded_prefix,
+        else: expanded_prefix <> "/"
+
+    String.starts_with?(expanded_path <> "/", normalized_prefix)
+  end
+
+  defp path_within?(_, _), do: false
+
+  defp resolve_workspace_dir do
+    base =
+      System.get_env("LEMON_DOTENV_DIR") ||
+        Path.join(System.get_env("HOME") || Path.expand("~"), ".lemon")
+
+    Path.join(base, "agent/workspace")
+  end
 
   defp wrap_tool(%AgentTool{} = tool, context) do
     original_execute = tool.execute
