@@ -108,7 +108,7 @@ defmodule Ai.Providers.Anthropic do
 
       url = "#{base_url}/v1/messages"
 
-      headers = build_headers(api_key, model.headers, opts.headers)
+      headers = build_headers(api_key, model.headers, opts.headers, model.provider)
       {body, history_info} = build_request_body(model, context, opts)
       trace_id = HttpTrace.new_trace_id("anthropic")
       messages = Map.get(body, "messages", [])
@@ -690,6 +690,7 @@ defmodule Ai.Providers.Anthropic do
   defp redact_headers(headers) when is_list(headers) do
     Enum.map(headers, fn
       {"x-api-key", _} -> {"x-api-key", "***"}
+      {"authorization", _} -> {"authorization", "***"}
       {k, v} -> {k, v}
     end)
   end
@@ -906,13 +907,25 @@ defmodule Ai.Providers.Anthropic do
   # Request Building
   # ============================================================================
 
-  defp build_headers(api_key, model_headers, opts_headers) do
+  @copilot_providers [:github_copilot, :"github-copilot"]
+  # Providers that authenticate with OAuth bearer tokens instead of x-api-key.
+  # Includes claude_subscription for use with a Claude.ai subscription token.
+  @bearer_providers [:claude_subscription, :"claude-subscription"] ++ @copilot_providers
+
+  defp build_headers(api_key, model_headers, opts_headers, provider \\ nil) do
     beta_features = ["fine-grained-tool-streaming-2025-05-14"]
+
+    auth_header =
+      if provider in @bearer_providers do
+        {"authorization", "Bearer #{api_key}"}
+      else
+        {"x-api-key", api_key}
+      end
 
     base_headers = [
       {"content-type", "application/json"},
       {"accept", "text/event-stream"},
-      {"x-api-key", api_key},
+      auth_header,
       {"anthropic-version", @api_version},
       {"anthropic-beta", Enum.join(beta_features, ",")}
     ]
