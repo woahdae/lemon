@@ -30,6 +30,11 @@ defmodule LemonChannels.Adapters.Telegram.OutboundTest do
       {:ok, %{"ok" => true, "result" => %{"message_id" => 800}}}
     end
 
+    def send_animation(_token, chat_id, {:path, path}, opts) do
+      send(self(), {:send_animation, chat_id, path, opts})
+      {:ok, %{"ok" => true, "result" => %{"message_id" => 810}}}
+    end
+
     def send_media_group(_token, chat_id, files, opts) do
       send(self(), {:send_media_group, chat_id, files, opts})
       {:ok, %{"ok" => true, "result" => [%{"message_id" => 700}, %{"message_id" => 701}]}}
@@ -505,6 +510,30 @@ defmodule LemonChannels.Adapters.Telegram.OutboundTest do
     assert opts[:caption] == "Watch this"
     assert opts[:reply_to_message_id] == 456
     assert opts[:message_thread_id] == 777
+  end
+
+  test "file: webm paths use send_animation (not send_video)" do
+    put_telegram_config(%{bot_token: "token", api_mod: MockApiCapture})
+
+    path =
+      Path.join(System.tmp_dir!(), "outbound-anim-#{System.unique_integer([:positive])}.webm")
+
+    File.write!(path, "webmdata")
+    on_exit(fn -> File.rm(path) end)
+
+    payload =
+      %OutboundPayload{
+        channel_id: "telegram",
+        account_id: "acct",
+        peer: %{kind: :dm, id: "123", thread_id: nil},
+        kind: :file,
+        content: %{path: path, caption: "Form walkthrough"}
+      }
+
+    assert {:ok, _} = Outbound.deliver(payload)
+    assert_receive {:send_animation, 123, ^path, opts}
+    assert opts[:caption] == "Form walkthrough"
+    refute_received {:send_video, _, _, _}
   end
 
   test "file: video paths fallback to send_document when send_video is unavailable" do

@@ -317,6 +317,35 @@ defmodule LemonChannels.Telegram.API do
     end
   end
 
+  def send_animation(token, chat_id, file, opts \\ %{}) do
+    opts = if is_map(opts), do: opts, else: Enum.into(opts, %{})
+
+    boundary = build_boundary("lemon-animation")
+
+    {body, content_type} =
+      build_media_multipart(boundary, chat_id, "animation", file, opts, "video/webm")
+
+    url = "https://api.telegram.org/bot#{token}/sendAnimation"
+    headers = [{~c"content-type", to_charlist(content_type)}]
+    http_opts = [timeout: 120_000, connect_timeout: 30_000]
+
+    case LemonCore.Httpc.request(
+           :post,
+           {to_charlist(url), headers, to_charlist(content_type), body},
+           http_opts,
+           body_format: :binary
+         ) do
+      {:ok, {{_, 200, _}, _headers, resp_body}} ->
+        Jason.decode(resp_body)
+
+      {:ok, {{_, status, _}, _headers, resp_body}} ->
+        {:error, {:http_error, status, resp_body}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   @doc """
   Send a photo media group to Telegram.
 

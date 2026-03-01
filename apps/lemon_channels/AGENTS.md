@@ -89,7 +89,7 @@ share a group and are never delivered concurrently to prevent reordering.
 
 | File | What It Does |
 |------|-------------|
-| `telegram/api.ex` | Raw Bot API calls: send_message, edit_message_text, get_updates, send_document, send_photo, send_video, send_media_group, send_chat_action, etc. |
+| `telegram/api.ex` | Raw Bot API calls: send_message, edit_message_text, get_updates, send_document, send_photo, send_video, send_animation, send_media_group, send_chat_action, etc. |
 | `telegram/delivery.ex` | High-level enqueue helpers (`enqueue_send/3`, `enqueue_edit/3`) backed by Outbox. |
 | `telegram/formatter.ex` | Markdown to plain text + Telegram entities. Avoids MarkdownV2 escaping entirely. |
 | `telegram/markdown.ex` | EarmarkParser AST renderer. Produces `{text, [entity]}` with correct UTF-16 offsets. |

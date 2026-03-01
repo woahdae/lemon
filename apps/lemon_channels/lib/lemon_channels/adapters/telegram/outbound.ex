@@ -552,6 +552,9 @@ defmodule LemonChannels.Adapters.Telegram.Outbound do
       video_file?(path) and function_exported?(api_mod, :send_video, 4) ->
         api_mod.send_video(token, chat_id, {:path, path}, opts)
 
+      animation_file?(path) and function_exported?(api_mod, :send_animation, 4) ->
+        api_mod.send_animation(token, chat_id, {:path, path}, opts)
+
       function_exported?(api_mod, :send_document, 4) ->
         api_mod.send_document(token, chat_id, {:path, path}, opts)
 
@@ -610,10 +613,15 @@ defmodule LemonChannels.Adapters.Telegram.Outbound do
     case Path.extname(path) |> String.downcase() do
       ".mp4" -> true
       ".mov" -> true
-      ".webm" -> true
       ".avi" -> true
       _ -> false
     end
+  end
+
+  # Telegram's sendAnimation endpoint accepts webm (plays inline like a GIF).
+  # sendVideo requires mp4/H.264 and rejects webm with a 404.
+  defp animation_file?(path) when is_binary(path) do
+    Path.extname(path) |> String.downcase() == ".webm"
   end
 
   # Transport merges runtime overrides from `Application.get_env(:lemon_channels, :telegram)`;
