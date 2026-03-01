@@ -512,13 +512,14 @@ defmodule LemonChannels.Adapters.Telegram.OutboundTest do
     assert opts[:message_thread_id] == 777
   end
 
-  test "file: webm paths use send_animation (not send_video)" do
+  test "file: webm paths transcode to mp4 and use send_video; fall back to send_document on transcode failure" do
     put_telegram_config(%{bot_token: "token", api_mod: MockApiCapture})
 
     path =
       Path.join(System.tmp_dir!(), "outbound-anim-#{System.unique_integer([:positive])}.webm")
 
-    File.write!(path, "webmdata")
+    # Invalid webm content — ffmpeg will fail, triggering the send_document fallback
+    File.write!(path, "not-real-webm-data")
     on_exit(fn -> File.rm(path) end)
 
     payload =
@@ -531,7 +532,7 @@ defmodule LemonChannels.Adapters.Telegram.OutboundTest do
       }
 
     assert {:ok, _} = Outbound.deliver(payload)
-    assert_receive {:send_animation, 123, ^path, opts}
+    assert_receive {:send_document, 123, ^path, opts}
     assert opts[:caption] == "Form walkthrough"
     refute_received {:send_video, _, _, _}
   end

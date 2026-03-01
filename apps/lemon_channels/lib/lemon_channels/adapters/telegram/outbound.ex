@@ -552,14 +552,58 @@ defmodule LemonChannels.Adapters.Telegram.Outbound do
       video_file?(path) and function_exported?(api_mod, :send_video, 4) ->
         api_mod.send_video(token, chat_id, {:path, path}, opts)
 
-      animation_file?(path) and function_exported?(api_mod, :send_animation, 4) ->
-        api_mod.send_animation(token, chat_id, {:path, path}, opts)
+      # webm (Playwright output) needs transcoding to H.264 mp4 for inline playback.
+      # Falls back to send_document if ffmpeg is unavailable.
+      animation_file?(path) and function_exported?(api_mod, :send_video, 4) ->
+        case transcode_webm_to_mp4(path) do
+          {:ok, mp4_path} ->
+            result = api_mod.send_video(token, chat_id, {:path, mp4_path}, opts)
+            File.rm(mp4_path)
+            result
+
+          {:error, _reason} ->
+            if function_exported?(api_mod, :send_document, 4) do
+              api_mod.send_document(token, chat_id, {:path, path}, opts)
+            else
+              {:error, :telegram_send_document_not_available}
+            end
+        end
 
       function_exported?(api_mod, :send_document, 4) ->
         api_mod.send_document(token, chat_id, {:path, path}, opts)
 
       true ->
         {:error, :telegram_send_document_not_available}
+    end
+  end
+
+  defp transcode_webm_to_mp4(webm_path) do
+    ffmpeg = System.find_executable("ffmpeg") || "/opt/homebrew/bin/ffmpeg"
+
+    unless File.regular?(ffmpeg) do
+      Logger.warning("Telegram outbound: ffmpeg not found, cannot transcode #{webm_path}")
+      {:error, :ffmpeg_not_found}
+    else
+      mp4_path = String.replace_suffix(webm_path, ".webm", "-transcoded.mp4")
+
+      args = [
+        "-y", "-i", webm_path,
+        "-vcodec", "libx264", "-acodec", "aac",
+        "-pix_fmt", "yuv420p",
+        mp4_path
+      ]
+
+      case System.cmd(ffmpeg, args, stderr_to_stdout: true) do
+        {_output, 0} ->
+          {:ok, mp4_path}
+
+        {output, exit_code} ->
+          Logger.warning(
+            "Telegram outbound: ffmpeg transcode failed (exit #{exit_code}): #{String.slice(output, 0, 200)}"
+          )
+
+          {:error, {:transcode_failed, exit_code}}
+      end
     end
   end
 
