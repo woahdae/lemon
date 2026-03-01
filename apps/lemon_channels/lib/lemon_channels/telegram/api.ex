@@ -289,7 +289,10 @@ defmodule LemonChannels.Telegram.API do
   - `{:binary, "video.mp4", "video/mp4", <<bytes>>}`
   """
   def send_video(token, chat_id, file, opts \\ %{}) do
-    opts = if is_map(opts), do: opts, else: Enum.into(opts, %{})
+    opts =
+      opts
+      |> (fn o -> if is_map(o), do: o, else: Enum.into(o, %{}) end).()
+      |> Map.put_new("supports_streaming", true)
 
     boundary = build_boundary("lemon-video")
 
@@ -576,6 +579,23 @@ defmodule LemonChannels.Telegram.API do
             [
               boundary_line,
               "Content-Disposition: form-data; name=\"message_thread_id\"\r\n\r\n",
+              to_string(v),
+              "\r\n"
+            ]
+            | parts
+          ]
+      end
+
+    parts =
+      case opts[:supports_streaming] || opts["supports_streaming"] do
+        nil ->
+          parts
+
+        v ->
+          [
+            [
+              boundary_line,
+              "Content-Disposition: form-data; name=\"supports_streaming\"\r\n\r\n",
               to_string(v),
               "\r\n"
             ]

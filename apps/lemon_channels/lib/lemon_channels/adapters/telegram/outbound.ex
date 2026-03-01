@@ -586,10 +586,16 @@ defmodule LemonChannels.Adapters.Telegram.Outbound do
     else
       mp4_path = String.replace_suffix(webm_path, ".webm", "-transcoded.mp4")
 
+      # -f lavfi -i aevalsrc=0:c=stereo injects a silent audio track so
+      # Telegram treats the result as a video (not a GIF-style animation).
+      # Without audio, Telegram auto-converts short silent mp4s to animations.
       args = [
-        "-y", "-i", webm_path,
+        "-y",
+        "-i", webm_path,
+        "-f", "lavfi", "-i", "aevalsrc=0:c=stereo:s=44100",
         "-vcodec", "libx264", "-acodec", "aac",
         "-pix_fmt", "yuv420p",
+        "-shortest",
         mp4_path
       ]
 
